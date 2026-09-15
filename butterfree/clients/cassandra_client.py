@@ -1,7 +1,6 @@
 """CassandraClient entity."""
 
 import logging
-from ssl import CERT_REQUIRED, PROTOCOL_TLSv1
 from typing import Dict, List, Optional, Union
 
 from cassandra.auth import PlainTextAuthProvider
@@ -102,7 +101,7 @@ class CassandraClient(AbstractClient):
         raise ValueError(GENERIC_INVALID_HOST_ERROR)
 
     @property
-    def conn(self, *, ssl_path: str = None) -> Session:  # type: ignore
+    def conn(self) -> Session:
         """Establishes a Cassandra connection."""
         if not self._session:
             auth_provider = (
@@ -110,16 +109,6 @@ class CassandraClient(AbstractClient):
                 if self.user is not None
                 else None
             )
-            ssl_opts = (
-                {
-                    "ca_certs": ssl_path,
-                    "ssl_version": PROTOCOL_TLSv1,
-                    "cert_reqs": CERT_REQUIRED,
-                }
-                if ssl_path is not None
-                else None
-            )
-
             execution_profiles = {
                 EXEC_PROFILE_DEFAULT: ExecutionProfile(
                     load_balancing_policy=DCAwareRoundRobinPolicy(),
@@ -130,7 +119,6 @@ class CassandraClient(AbstractClient):
             cluster = Cluster(
                 contact_points=self.host,
                 auth_provider=auth_provider,
-                ssl_options=ssl_opts,
                 execution_profiles=execution_profiles,
             )
             self._session = cluster.connect(self.keyspace)
