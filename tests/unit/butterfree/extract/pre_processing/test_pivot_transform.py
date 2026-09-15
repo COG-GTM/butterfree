@@ -27,6 +27,26 @@ class TestPivotTransform:
             expected_df=pivot_df,
         )
 
+    def test_pivot_transformation_with_values(
+        self,
+        input_df,
+        pivot_df,
+    ):
+        result_df = pivot(
+            dataframe=input_df,
+            group_by_columns=["id", "ts"],
+            pivot_column="pivot_column",
+            agg_column="has_feature",
+            aggregation=first,
+            values=[1, 2, 3, 4],
+        )
+
+        # assert
+        assert compare_dataframes(
+            actual_df=result_df,
+            expected_df=pivot_df,
+        )
+
     def test_pivot_transformation_with_forward_fill(
         self,
         input_df,
