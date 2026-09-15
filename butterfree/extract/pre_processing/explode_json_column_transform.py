@@ -67,20 +67,16 @@ def explode_json_column(
         dataframe with the new extracted columns from the JSON column.
 
     """
+    new_columns = {}
     for field in json_schema:
+        json_value = get_json_object(df[column], "$.{}".format(field.name))
         if field.dataType.typeName() in JSON_TYPE_NAMES:
-            df = df.withColumn(
-                field.name,
-                from_json(
-                    get_json_object(df[column], "$.{}".format(field.name)),
-                    schema=field.dataType,  # type: ignore
-                ),
-            )
+            new_column = from_json(json_value, schema=field.dataType)  # type: ignore
         else:  # non-collection data types
-            df = df.withColumn(
-                field.name,
-                get_json_object(df[column], "$.{}".format(field.name)).cast(
-                    field.dataType
-                ),
-            )
-    return df
+            new_column = json_value.cast(field.dataType)
+        new_columns[field.name] = new_column.alias(field.name)
+
+    # same layout as chained withColumn: replaced columns keep their position,
+    # brand-new columns are appended in schema order
+    selected = [new_columns.pop(name, df[name]) for name in df.columns]
+    return df.select(*selected, *new_columns.values())
