@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from functools import reduce
 from typing import Any, Dict, List, Optional, Union
 
-from pyspark import sql
+from pyspark import StorageLevel, sql
 from pyspark.sql import DataFrame, functions
 
 from butterfree.clients import SparkClient
@@ -565,6 +565,8 @@ class AggregatedFeatureSet(FeatureSet):
         After that, there's the caching of the dataframe, however since cache()
         in Spark is lazy, an action is triggered in order to force persistence,
         but we only cache if it is not a streaming spark dataframe.
+        For windowed aggregations, the intermediate dataframe is persisted before
+        per-window aggregation.
 
         Args:
             dataframe: input dataframe to be transformed by the features.
@@ -589,6 +591,11 @@ class AggregatedFeatureSet(FeatureSet):
             self.keys + [self.timestamp],
             pre_hook_df,
         )
+
+        persisted_df = None
+        if self._windows and not output_df.isStreaming:
+            output_df = output_df.persist(StorageLevel.MEMORY_AND_DISK)
+            persisted_df = output_df
 
         if self._windows and end_date is not None:
             # run aggregations for each window
@@ -655,6 +662,8 @@ class AggregatedFeatureSet(FeatureSet):
                 output_df = self._filter_duplicated_rows(output_df)
             if self.eager_evaluation:
                 output_df.cache().count()
+                if persisted_df is not None:
+                    persisted_df.unpersist()
 
         post_hook_df = self.run_post_hooks(output_df)
 
