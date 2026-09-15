@@ -18,6 +18,11 @@ from butterfree.transform.transformations import AggregatedTransform
 from butterfree.transform.utils import Window, date_range
 
 
+def _quoted_col(name: str) -> sql.Column:
+    escaped = name.replace("`", "``")
+    return functions.col(f"`{escaped}`")
+
+
 class AggregatedFeatureSet(FeatureSet):
     """Holds metadata about the aggregated feature set.
 
@@ -458,16 +463,16 @@ class AggregatedFeatureSet(FeatureSet):
             type = len(pivot_values) * type
 
         select = [
-            f"cast(`{old_name}` as {dt.simpleString()}) as {new_name}"
+            _quoted_col(old_name).cast(dt).alias(new_name)
             for old_name, new_name, dt in zip(old_columns, new_columns, type)
         ]
         if self._windows:
-            select.append(f"window.end as {self.timestamp_column}")
+            select.append(functions.col("window.end").alias(self.timestamp_column))
         else:
-            select.append(f"{self.timestamp_column}")
+            select.append(_quoted_col(self.timestamp_column))
 
-        select += [kc for kc in self.keys_columns]
-        return aggregated.selectExpr(*select)
+        select += [_quoted_col(kc) for kc in self.keys_columns]
+        return aggregated.select(*select)
 
     def get_schema(self) -> List[Dict[str, Any]]:
         """Get feature set schema.
