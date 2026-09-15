@@ -1,11 +1,10 @@
 """Pivot Transform for dataframes."""
 
-from typing import Callable, List, Optional, Union
+import sys
+from typing import Any, Callable, List, Optional, Union
 
-from pyspark.sql import DataFrame, functions
+from pyspark.sql import DataFrame, Window, functions
 from pyspark.sql.types import DataType
-
-from butterfree.extract.pre_processing import forward_fill
 
 
 def pivot(
@@ -17,6 +16,7 @@ def pivot(
     mock_value: Optional[Union[float, str]] = None,
     mock_type: Optional[Union[DataType, str]] = None,
     with_forward_fill: bool = False,
+    values: Optional[List[Any]] = None,
 ) -> DataFrame:
     """Defines a pivot transformation.
 
@@ -33,6 +33,9 @@ def pivot(
         mock_type: mock_value data type (compatible with spark).
         with_forward_fill: applies a forward fill to null values after the pivot
             operation.
+        values: optional list of the distinct values of `pivot_column`. When given,
+            Spark skips the extra job that discovers the distinct pivot values; the
+            output columns are exactly these values, in this order.
 
     Example:
 
@@ -138,27 +141,34 @@ def pivot(
 
     pivoted = (
         dataframe.groupBy(*group_by_columns)
-        .pivot(pivot_column)
+        .pivot(pivot_column, values)
         .agg(aggregation(agg_column))
     )
 
     new_columns = [c for c in pivoted.columns if c not in group_by_columns]
 
     if with_forward_fill:
-        for c in new_columns:
-            pivoted = forward_fill(
-                dataframe=pivoted,
-                partition_by=group_by_columns[:-1],
-                order_by=group_by_columns[-1],
-                fill_column=c,
-            )
+        window = (
+            Window.partitionBy(group_by_columns[:-1])  # type: ignore
+            .orderBy(group_by_columns[-1])  # type: ignore
+            .rowsBetween(-sys.maxsize, 0)
+        )
+        pivoted = pivoted.select(
+            *group_by_columns,
+            *[
+                functions.last(functions.col(c), ignorenulls=True).over(window).alias(c)
+                for c in new_columns
+            ],
+        )
 
     if mock_value is not None:
-        for c in new_columns:
-            pivoted = pivoted.withColumn(
-                c,
-                functions.when(functions.col(c) != mock_value, functions.col(c)).cast(
-                    agg_column_type  # type: ignore
-                ),
-            )
+        pivoted = pivoted.select(
+            *group_by_columns,
+            *[
+                functions.when(functions.col(c) != mock_value, functions.col(c))
+                .cast(agg_column_type)  # type: ignore
+                .alias(c)
+                for c in new_columns
+            ],
+        )
     return pivoted
