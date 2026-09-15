@@ -372,11 +372,7 @@ class AggregatedFeatureSet(FeatureSet):
         right: DataFrame,
         on: List[str],
         how: str,
-        num_processors: Optional[int] = None,
     ) -> DataFrame:
-        # make both tables co-partitioned to improve join performance
-        left = repartition_df(left, partition_by=on, num_processors=num_processors)
-        right = repartition_df(right, partition_by=on, num_processors=num_processors)
         return left.join(right, on=on, how=how)
 
     def _aggregate(
@@ -414,13 +410,6 @@ class AggregatedFeatureSet(FeatureSet):
                 "keep_rn", functions.row_number().over(partition_window)
             ).filter("keep_rn = 1")
 
-        # repartition to have all rows for each group at the same partition
-        # by doing that, we won't have to shuffle data on grouping by id
-        dataframe = repartition_df(
-            dataframe,
-            partition_by=groupby,
-            num_processors=num_processors,
-        )
         grouped_data = dataframe.groupby(*groupby)
 
         if self._pivot_column:
@@ -616,6 +605,11 @@ class AggregatedFeatureSet(FeatureSet):
                 base_df = self._get_base_dataframe(
                     client=client, dataframe=output_df, end_date=end_date
                 )
+                base_df = repartition_df(
+                    base_df,
+                    partition_by=self.keys_columns + [self.timestamp_column],
+                    num_processors=num_processors,
+                )
 
                 # left join each aggregation result to our base dataframe
                 output_df = reduce(
@@ -624,21 +618,25 @@ class AggregatedFeatureSet(FeatureSet):
                         right,
                         on=self.keys_columns + [self.timestamp_column],
                         how="left",
-                        num_processors=num_processors,
                     ),
                     agg_list,
                     base_df,
                 )
             else:
+                first_df = repartition_df(
+                    agg_list[0],
+                    partition_by=self.keys_columns + [self.timestamp_column],
+                    num_processors=num_processors,
+                )
                 output_df = reduce(
                     lambda left, right: self._dataframe_join(
                         left,
                         right,
                         on=self.keys_columns + [self.timestamp_column],
                         how="full_outer",
-                        num_processors=num_processors,
                     ),
-                    agg_list,
+                    agg_list[1:],
+                    first_df,
                 )
         else:
             output_df = self._aggregate(output_df, features=self.features)
