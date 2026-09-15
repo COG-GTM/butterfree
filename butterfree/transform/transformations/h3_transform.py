@@ -1,9 +1,10 @@
 """H3 Transform entity."""
 
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
+import pandas as pd
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import lit, udf
+from pyspark.sql.functions import lit, pandas_udf
 from pyspark.sql.types import StringType
 
 from butterfree.transform.transformations.stack_transform import StackTransform
@@ -18,20 +19,26 @@ except ModuleNotFoundError as e:
     raise
 
 
-@udf(StringType())
-def define_h3(lat: float, lng: float, resolution: int) -> Any:
-    """UDF for h3 hash retrieval.
+@pandas_udf(StringType())
+def define_h3(lat: pd.Series, lng: pd.Series, resolution: pd.Series) -> pd.Series:
+    """Vectorized UDF for h3 hash retrieval.
 
     Attributes:
         lat: latitude column.
         lng: longitude column.
         resolution: desired h3 resolution.
     """
-    if lat and lng:
-        h3_feature = h3.geo_to_h3(lat, lng, resolution)
-    else:
-        h3_feature = None
-    return h3_feature
+    return pd.Series(
+        [
+            (
+                h3.geo_to_h3(la, ln, int(r))
+                if pd.notna(la) and pd.notna(ln) and la and ln
+                else None
+            )
+            for la, ln, r in zip(lat, lng, resolution)
+        ],
+        dtype=object,
+    )
 
 
 class H3HashTransform(TransformComponent):
