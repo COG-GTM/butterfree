@@ -10,7 +10,6 @@ from typing import Set
 import boto3
 import setuptools
 import typer
-from botocore.exceptions import ClientError
 
 from butterfree.configs import environment
 from butterfree.migrations.database_migration import ALLOWED_DATABASE
@@ -131,29 +130,20 @@ class Migrate:
 
             timestamp = datetime.datetime.now()
 
-            if debug_mode:
-                object_name = (
-                    f"logs/migrate-debug-mode/"
-                    f"{timestamp.strftime('%Y-%m-%d')}"
-                    f"/logging-{timestamp.strftime('%H:%M:%S')}.json"
-                )
-            else:
-                object_name = (
-                    f"logs/migrate/"
-                    f"{timestamp.strftime('%Y-%m-%d')}"
-                    f"/logging-{timestamp.strftime('%H:%M:%S')}.json"
-                )
+            prefix = "migrate-debug-mode" if debug_mode else "migrate"
+            object_name = (
+                f"logs/{prefix}/"
+                f"{timestamp.strftime('%Y-%m-%d')}"
+                f"/logging-{timestamp.strftime('%H:%M:%S')}.json"
+            )
             bucket = environment.get_variable("FEATURE_STORE_S3_BUCKET")
 
-            try:
-                s3_client.upload_file(
-                    file_name,
-                    bucket,
-                    object_name,
-                    ExtraArgs={"ACL": "bucket-owner-full-control"},
-                )
-            except ClientError:
-                raise
+            s3_client.upload_file(
+                file_name,
+                bucket,
+                object_name,
+                ExtraArgs={"ACL": "bucket-owner-full-control"},
+            )
 
             os.remove(file_name)
         elif os.path.exists(file_name):
