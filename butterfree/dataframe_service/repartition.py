@@ -64,6 +64,10 @@ def repartition_sort_df(
         Partitioned and sorted dataframe.
 
     """
-    num_partitions = _num_partitions_definition(num_processors, num_partitions)
-    dataframe = repartition_df(dataframe, partition_by, num_partitions)
+    dataframe = repartition_df(
+        dataframe,
+        partition_by,
+        num_partitions=num_partitions,
+        num_processors=num_processors,
+    )
     return dataframe.sortWithinPartitions(*order_by)
