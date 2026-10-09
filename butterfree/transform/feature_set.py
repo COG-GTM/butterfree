@@ -12,6 +12,7 @@ from butterfree.clients import SparkClient
 from butterfree.constants.columns import TIMESTAMP_COLUMN
 from butterfree.dataframe_service import IncrementalStrategy
 from butterfree.hooks import HookableComponent
+from butterfree.metadata.feature_metadata import FeatureMetadata
 from butterfree.metadata.feature_set_metadata import FeatureSetMetadata
 from butterfree.transform.features import Feature, KeyFeature, TimestampFeature
 from butterfree.transform.transformations import (
@@ -263,6 +264,18 @@ class FeatureSet(HookableComponent):
         """
         return self.keys_columns + [self.timestamp_column] + self.features_columns
 
+    def _key_timestamp_schema(self) -> List[Dict[str, Any]]:
+        """Build the schema rows for the key and timestamp columns."""
+        return [
+            {
+                "column_name": column_name,
+                "type": feature.dtype.spark,
+                "primary_key": isinstance(feature, KeyFeature),
+            }
+            for feature in self.keys + [self.timestamp]
+            for column_name in self._get_features_columns(feature)
+        ]
+
     def get_schema(self) -> List[Dict[str, Any]]:
         """Get feature set schema.
 
@@ -273,19 +286,7 @@ class FeatureSet(HookableComponent):
             List of dicts regarding cassandra feature set schema.
 
         """
-        schema = []
-
-        for feature in self.keys + [self.timestamp]:
-            for column_name in self._get_features_columns(feature):
-                schema.append(
-                    {
-                        "column_name": column_name,
-                        "type": feature.dtype.spark,
-                        "primary_key": (
-                            True if isinstance(feature, KeyFeature) else False
-                        ),
-                    }
-                )
+        schema = self._key_timestamp_schema()
 
         for feature in self.features:
             name = self._get_features_columns(feature)
@@ -465,12 +466,14 @@ class FeatureSet(HookableComponent):
 
         return post_hook_df
 
+    def _key_timestamp_metadata(self) -> List[FeatureMetadata]:
+        """Build the metadata for the key and timestamp features."""
+        return [key.build_metadata() for key in self.keys] + [
+            self.timestamp.build_metadata()
+        ]
+
     def build_metadata(self) -> FeatureSetMetadata:
         """Build the metadata for the feature set."""
-        keys_metadata = [key_feature.build_metadata() for key_feature in self.keys]
-
-        timestamp_metadata = [self.timestamp.build_metadata()]
-
         features_metadata = list(
             itertools.chain(*[feature.build_metadata() for feature in self.features])
         )
@@ -481,5 +484,5 @@ class FeatureSet(HookableComponent):
             type="FeatureSet",
             description=self.description,
             windows_definition=None,
-            features=keys_metadata + timestamp_metadata + features_metadata,
+            features=self._key_timestamp_metadata() + features_metadata,
         )

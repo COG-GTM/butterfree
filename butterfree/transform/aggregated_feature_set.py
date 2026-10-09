@@ -479,18 +479,7 @@ class AggregatedFeatureSet(FeatureSet):
             List of dicts with the feature set schema.
 
         """
-        schema = []
-        for feature in self.keys + [self.timestamp]:
-            for column_name in self._get_features_columns(feature):
-                schema.append(
-                    {
-                        "column_name": column_name,
-                        "type": feature.dtype.spark,
-                        "primary_key": (
-                            True if isinstance(feature, KeyFeature) else False
-                        ),
-                    }
-                )
+        schema = self._key_timestamp_schema()
         pivot_values = self._pivot_values or [None]
         windows = self._windows or [None]
 
@@ -664,8 +653,6 @@ class AggregatedFeatureSet(FeatureSet):
         """Build the metadata for the feature set."""
         windows_definition = [window.build_metadata() for window in self._windows]
 
-        keys_metadata = [key_feature.build_metadata() for key_feature in self.keys]
-        timestamp_metadata = [self.timestamp.build_metadata()]
         features_metadata = list(
             itertools.chain(
                 *[
@@ -683,5 +670,5 @@ class AggregatedFeatureSet(FeatureSet):
             type="AggregatedFeatureSet",
             description=self.description,
             windows_definition=windows_definition,
-            features=keys_metadata + timestamp_metadata + features_metadata,
+            features=self._key_timestamp_metadata() + features_metadata,
         )
